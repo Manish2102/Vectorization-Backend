@@ -11,8 +11,9 @@ DATABRICKS_TOKEN = os.getenv('DATABRICKS_TOKEN', 'dapibbaaa71fcd3f5fd3612a6a3712
 
 headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"}
 
-# Predefined destination path
-DESTINATION_PATH = "/FileStore/Group-6_Data"  # Correct path format
+# Paths for data storage
+STRUCTURED_PATH = "/FileStore/Group-6_Data/Structured-data"  # Path for structured data
+UNSTRUCTURED_PATH = "/FileStore/Group-6_Data/Unstructured-data"  # Path for unstructured data
 
 # Allowed file extensions
 STRUCTURED_EXTENSIONS = ['csv', 'xls', 'xlsx']
@@ -70,15 +71,23 @@ def is_valid_file(file, data_type):
         return extension in UNSTRUCTURED_EXTENSIONS
     return False
 
-def upload_file_to_dbfs(file):
-    # Convert the file to binary (base64 is not needed for binary data)
+def upload_file_to_dbfs(file, data_type):
+    # Determine the destination path based on data type
+    if data_type == 'structured':
+        path = STRUCTURED_PATH
+    elif data_type == 'unstructured':
+        path = UNSTRUCTURED_PATH
+    else:
+        raise ValueError("Invalid data type")
+
+    # Convert the file to binary
     file_content = file.read()
     print(f"File size in bytes: {len(file_content)}")  # Debugging line
 
     # Upload the file to DBFS
     dbfs_upload_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/put"
     payload = {
-        "path": DESTINATION_PATH + "/" + file.filename,  # Include filename in the path
+        "path": path + "/" + file.filename,  # Include filename in the path
         "contents": base64.b64encode(file_content).decode('utf-8'),
         "overwrite": True
     }
@@ -107,14 +116,14 @@ def upload_file():
 
     try:
         # Upload file to DBFS
-        response = upload_file_to_dbfs(file)
-        return jsonify({"message": f"File uploaded successfully to {DESTINATION_PATH}/{file.filename}", "response": response}), 200
+        response = upload_file_to_dbfs(file, data_type)
+        return jsonify({"message": f"File uploaded successfully to {STRUCTURED_PATH if data_type == 'structured' else UNSTRUCTURED_PATH}/{file.filename}", "response": response}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/list-files', methods=['GET'])
 def list_files():
-    path = request.args.get('path', DESTINATION_PATH)
+    path = request.args.get('path', STRUCTURED_PATH)  # Default path for listing files
     
     # List files in DBFS
     dbfs_list_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/list"
