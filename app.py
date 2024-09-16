@@ -1,74 +1,83 @@
-# app.py
-from flask import Flask, request, jsonify
-import requests
-import base64
 import os
-import tempfile
+import requests
+from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
 
-# Databricks configuration
-DATABRICKS_INSTANCE = 'https://adb-1620865038680305.5.azuredatabricks.net'
-API_TOKEN = 'dapibbaaa71fcd3f5fd3612a6a37120509d2-3'
-MOUNT_PATH = 'https://adb-1620865038680305.5.azuredatabricks.net/explore/data/volumes/main/default/all_types_data_grp6?o=1620865038680305'  # Adjusted to a relative DBFS path
+# Set Databricks configuration (replace with your details)
+DATABRICKS_INSTANCE = "https://adb-1620865038680305.5.azuredatabricks.net"
+DBFS_API_ENDPOINT = f"{DATABRICKS_INSTANCE}/api/2.0/dbfs/put"
+DATABRICKS_TOKEN = "dapibbaaa71fcd3f5fd3612a6a37120509d2-3"
 
+# Helper function to upload file to DBFS
+def upload_file_to_dbfs(file, path):
+    # Prepare headers for the Databricks API
+    headers = {
+        "Authorization": f"Bearer {DATABRICKS_TOKEN}"
+    }
+
+    # Read file content
+    file_content = file.read()
+
+    # Prepare the payload for the request
+    data = {
+        "path": path,
+        "overwrite": "true"  # Set to True if you want to overwrite existing files
+    }
+    files = {
+        'file': file_content
+    }
+
+    # Perform the API request
+    response = requests.post(DBFS_API_ENDPOINT, headers=headers, data=data, files=files)
+
+    # Check if upload was successful
+    if response.status_code == 200:
+        return {"status": "success", "message": "File uploaded successfully!"}
+    else:
+        return {"status": "error", "message": f"Failed to upload file: {response.text}"}
+
+# Route to display the upload form
+@app.route('/')
+def index():
+    return '''
+    <!doctype html>
+    <title>Upload File to Databricks DBFS</title>
+    <h1>Upload File</h1>
+    <form action="/api/v1/upload" method="POST" enctype="multipart/form-data">
+        <label for="path">DBFS Path:</label><br>
+        <input type="text" id="path" name="path" value="/dbfs:/filestore/Group-6_Data"><br><br>
+        <input type="file" name="file"><br><br>
+        <input type="submit" value="Upload">
+    </form>
+    '''
+
+# Route for uploading file
 @app.route('/api/v1/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+def upload():
+    # Check if 'file' and 'path' are in the request
+    if 'file' not in request.files or 'path' not in request.form:
+        return jsonify({"status": "error", "message": "Missing file or path in the request"}), 400
 
     file = request.files['file']
+    dbfs_path = request.form['path']
+
+    # Check for file validity
     if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        return jsonify({"status": "error", "message": "No file selected for uploading"}), 400
 
-    # Save the file to a temporary directory
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file.write(file.read())
-        temp_file_path = temp_file.name
+    # Ensure path starts with '/dbfs:/'
+    if not dbfs_path.startswith('/dbfs:/'):
+        return jsonify({"status": "error", "message": "Invalid DBFS path. Path must start with '/dbfs:/'"}), 400
 
-    response = upload_to_dbfs(temp_file_path, file.filename)
-    
-    os.remove(temp_file_path)  # Clean up temporary file
+    # Construct full path
+    full_dbfs_path = f"{dbfs_path}/{file.filename}"
 
-    if response.status_code == 200:
-        return jsonify({'message': 'File uploaded successfully'}), 200
-    else:
-        return jsonify({'error': 'Failed to upload file', 'details': response.json()}), response.status_code
+    # Upload file to DBFS
+    result = upload_file_to_dbfs(file, full_dbfs_path)
 
-def upload_to_dbfs(file_path, file_name):
-    url = f'{DATABRICKS_INSTANCE}/api/2.0/dbfs/put'
-    headers = {
-        'Authorization': f'Bearer {API_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-    with open(file_path, 'rb') as f:
-        file_contents = base64.b64encode(f.read()).decode('utf-8')
-    
-    payload = {
-        'path': f'{MOUNT_PATH}/{file_name}',
-        'contents': file_contents,
-        'overwrite': True
-    }
-    return requests.post(url, json=payload, headers=headers)
-
-@app.route('/api/v1/list-files', methods=['GET'])
-def list_files():
-    url = f'{DATABRICKS_INSTANCE}/api/2.0/dbfs/list'
-    headers = {
-        'Authorization': f'Bearer {API_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-    params = {
-        'path': MOUNT_PATH
-    }
-    response = requests.get(url, headers=headers, params=params)
-    
-    if response.status_code == 200:
-        files = response.json().get('files', [])
-        file_paths = [file['path'] for file in files]
-        return jsonify({'files': file_paths}), 200
-    else:
-        return jsonify({'error': 'Failed to list files', 'details': response.json()}), response.status_code
+    # Return upload status
+    return jsonify(result)
 
 if __name__ == '__main__':
     app.run(debug=True)
