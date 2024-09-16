@@ -6,13 +6,13 @@ import base64
 app = Flask(__name__)
 
 # Load sensitive credentials from environment variables
-DATABRICKS_HOST = os.getenv('DATABRICKS_HOST', 'https://adb-1620865038680305.5.azuredatabricks.net/')
+DATABRICKS_HOST = os.getenv('DATABRICKS_HOST', 'https://adb-1620865038680305.5.azuredatabricks.net')
 DATABRICKS_TOKEN = os.getenv('DATABRICKS_TOKEN', 'dapibbaaa71fcd3f5fd3612a6a37120509d2-3')
 
 headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"}
 
 # Predefined destination path
-DESTINATION_PATH = "/dbfs/Filestore/New-data"
+DESTINATION_PATH = "/FileStore/Group-6_Data"  # Correct path format
 
 # HTML form for file upload
 UPLOAD_FORM_HTML = '''
@@ -40,15 +40,15 @@ def index():
     return render_template_string(UPLOAD_FORM_HTML)
 
 def upload_file_to_dbfs(file):
-    # Convert the file to Base64
-    file_content = base64.b64encode(file.read()).decode('utf-8')
+    # Convert the file to binary (base64 is not needed for binary data)
+    file_content = file.read()
     print(f"File size in bytes: {len(file_content)}")  # Debugging line
 
     # Upload the file to DBFS
     dbfs_upload_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/put"
     payload = {
-        "path": DESTINATION_PATH,
-        "contents": file_content,
+        "path": DESTINATION_PATH + "/" + file.filename,  # Include filename in the path
+        "contents": base64.b64encode(file_content).decode('utf-8'),
         "overwrite": True
     }
     response = requests.post(dbfs_upload_url, headers=headers, json=payload)
@@ -73,7 +73,7 @@ def upload_file():
     try:
         # Upload file to DBFS
         response = upload_file_to_dbfs(file)
-        return jsonify({"message": f"File uploaded successfully to {DESTINATION_PATH}", "response": response}), 200
+        return jsonify({"message": f"File uploaded successfully to {DESTINATION_PATH}/{file.filename}", "response": response}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
