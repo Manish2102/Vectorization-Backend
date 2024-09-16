@@ -14,6 +14,10 @@ headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"}
 # Predefined destination path
 DESTINATION_PATH = "/FileStore/Group-6_Data"  # Correct path format
 
+# Allowed file extensions
+STRUCTURED_EXTENSIONS = ['csv', 'xls', 'xlsx']
+UNSTRUCTURED_EXTENSIONS = ['pdf', 'doc', 'docx', 'json']
+
 # HTML form for file upload
 UPLOAD_FORM_HTML = '''
 <!DOCTYPE html>
@@ -22,10 +26,29 @@ UPLOAD_FORM_HTML = '''
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload File</title>
+    <script>
+        function updateFileTypes() {
+            const fileInput = document.getElementById('file');
+            const dataType = document.querySelector('input[name="data-type"]:checked').value;
+
+            if (dataType === 'structured') {
+                fileInput.accept = '.csv, .xls, .xlsx';
+            } else {
+                fileInput.accept = '.pdf, .doc, .docx, .json';
+            }
+        }
+    </script>
 </head>
 <body>
     <h1>Upload File to DBFS</h1>
     <form action="/upload" method="post" enctype="multipart/form-data">
+        <label for="structured">
+            <input type="radio" id="structured" name="data-type" value="structured" checked onclick="updateFileTypes()"> Structured Data
+        </label>
+        <label for="unstructured">
+            <input type="radio" id="unstructured" name="data-type" value="unstructured" onclick="updateFileTypes()"> Unstructured Data
+        </label>
+        <br><br>
         <label for="file">Choose file:</label>
         <input type="file" id="file" name="file" required>
         <br><br>
@@ -38,6 +61,14 @@ UPLOAD_FORM_HTML = '''
 @app.route('/')
 def index():
     return render_template_string(UPLOAD_FORM_HTML)
+
+def is_valid_file(file, data_type):
+    extension = file.filename.rsplit('.', 1)[-1].lower()
+    if data_type == 'structured':
+        return extension in STRUCTURED_EXTENSIONS
+    elif data_type == 'unstructured':
+        return extension in UNSTRUCTURED_EXTENSIONS
+    return False
 
 def upload_file_to_dbfs(file):
     # Convert the file to binary (base64 is not needed for binary data)
@@ -66,9 +97,13 @@ def upload_file():
         return jsonify({"error": "No file part in the request"}), 400
 
     file = request.files['file']
+    data_type = request.form.get('data-type')
 
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
+
+    if not is_valid_file(file, data_type):
+        return jsonify({"error": f"Invalid file type for {data_type} data. Allowed types are: {', '.join(STRUCTURED_EXTENSIONS) if data_type == 'structured' else ', '.join(UNSTRUCTURED_EXTENSIONS)}"}), 400
 
     try:
         # Upload file to DBFS
@@ -95,7 +130,6 @@ def list_files():
         return jsonify(response.json()), 200
     else:
         return jsonify({"error": f"Failed to list files: {response.status_code}, {response.text}"}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)
