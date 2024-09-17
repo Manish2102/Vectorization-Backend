@@ -1,147 +1,189 @@
-from flask import Flask, render_template, jsonify, request
-import json
-import requests
-import time
-import base64
 import os
+import requests
+import base64
+from flask import Flask, request, jsonify, render_template_string
+import logging
 
-app = Flask(_name_)
+app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # Load sensitive credentials from environment variables
-DATABRICKS_HOST = os.getenv('DATABRICKS_HOST', 'https://adb-2391317195324727.7.azuredatabricks.net')
-DATABRICKS_TOKEN = os.getenv('DATABRICKS_TOKEN', 'dapi2ba83a009e697fc9940656df705a7098-3')
-CLUSTER_ID = os.getenv('CLUSTER_ID', '0913-052228-mn4cbjcl')
+DATABRICKS_HOST = os.getenv('DATABRICKS_HOST', 'https://adb-1620865038680305.5.azuredatabricks.net')
+DATABRICKS_TOKEN = os.getenv('DATABRICKS_TOKEN', 'dapibbaaa71fcd3f5fd3612a6a37120509d2-3')
+JOB_ID = os.getenv('JOB_ID', '595512840231112')  # Your existing Databricks Job ID
 
-headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"}
+headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}", "Content-Type": "application/json"}
 
-# Load the JSON file containing the workflow data
-with open('sample_data.json') as f:
-    data = json.load(f)
+# Paths for data storage
+STRUCTURED_PATH = "/FileStore/Group-6_Data/Structured-data"
+UNSTRUCTURED_PATH = "/FileStore/Group-6_Data/Unstructured-data"
 
-# Function to upload a notebook to Databricks
-def upload_notebook(local_path, dbx_path):
-    with open(local_path, 'r') as notebook_file:
-        notebook_content = notebook_file.read()
+# Allowed file extensions
+STRUCTURED_EXTENSIONS = ['csv', 'xls', 'xlsx', 'png']
+UNSTRUCTURED_EXTENSIONS = ['pdf', 'doc', 'docx', 'json', '.txt']
 
-    notebook_content_base64 = base64.b64encode(notebook_content.encode('utf-8')).decode('utf-8')
-    url = f"{DATABRICKS_HOST}/api/2.0/workspace/import"
+UPLOAD_FORM_HTML = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload File</title>
+    <script>
+        function updateFileTypes() {
+            const fileInput = document.getElementById('file');
+            const dataType = document.querySelector('input[name="data-type"]:checked').value;
+
+            if (dataType === 'structured') {
+                fileInput.accept = '.csv, .xls, .xlsx, .png';
+            } else {
+                fileInput.accept = '.pdf, .doc, .docx, .json';
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Upload File to DBFS</h1>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <label for="structured">
+            <input type="radio" id="structured" name="data-type" value="structured" checked onclick="updateFileTypes()"> Structured Data
+        </label>
+        <label for="unstructured">
+            <input type="radio" id="unstructured" name="data-type" value="unstructured" onclick="updateFileTypes()"> Unstructured Data
+        </label>
+        <br><br>
+        <label for="file">Choose file:</label>
+        <input type="file" id="file" name="file" required>
+        <br><br>
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html>
+'''
+
+@app.route('/')
+def index():
+    return render_template_string(UPLOAD_FORM_HTML)
+
+def is_valid_file(file, data_type):
+    extension = file.filename.rsplit('.', 1)[-1].lower()
+    if data_type == 'structured':
+        return extension in STRUCTURED_EXTENSIONS
+    elif data_type == 'unstructured':
+        return extension in UNSTRUCTURED_EXTENSIONS
+    return False
+
+def upload_file_to_dbfs(file, data_type):
+    if data_type == 'structured':
+        path = STRUCTURED_PATH
+    elif data_type == 'unstructured':
+        path = UNSTRUCTURED_PATH
+    else:
+        raise ValueError("Invalid data type")
+
+    file_content = file.read()
+
+    dbfs_upload_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/put"
     payload = {
-        "path": dbx_path,
-        "content": notebook_content_base64,
-        "format": "SOURCE",
-        "language": "PYTHON",
+        "path": path + "/" + file.filename,
+        "contents": base64.b64encode(file_content).decode('utf-8'),
         "overwrite": True
     }
+    response = requests.post(dbfs_upload_url, headers=headers, json=payload)
 
-    response = requests.post(url, headers=headers, json=payload)
     if response.status_code == 200:
-        return dbx_path
+        return response.json()
     else:
-        raise Exception(f"Failed to upload notebook: {response.status_code}, {response.text}")
+        raise Exception(f"Failed to upload file to DBFS: {response.status_code}, {response.text}")
 
-# Combined function to upload notebooks, create, and run a Databricks job
-def create_and_run_databricks_job():
-    notebook_paths = {
-        "Fetching Data": r"C:\Users\DELL\Desktop\code\fetching_data.py",
-        "Cleaning Data": r"C:\Users\DELL\Desktop\code\cleaning_data.py",
-        "Transforming Data": r"C:\Users\DELL\Desktop\code\transforming_data.py",
-        "Runing Analysis": r"C:\Users\DELL\Desktop\code\runing_analysis.py",
-        "Generateing Report": r"C:\Users\DELL\Desktop\code\generateing_report.py"
-    }
-    
-    databricks_folder = "/Workspace/Users/hackathon_ai10@centific.com/POD_K2/conf"
-    
-    # Upload notebooks to Databricks
-    for task_name, local_path in notebook_paths.items():
-        filename = os.path.basename(local_path)
-        dbx_path = f"{databricks_folder}/{filename}"
-        try:
-            upload_notebook(local_path, dbx_path)
-            print(f"Uploaded {local_path} to {dbx_path}")
-        except Exception as e:
-            print(f"Error uploading {local_path}: {e}")
-    
-    # Create the job
-    create_job_url = f"{DATABRICKS_HOST}/api/2.1/jobs/create"
-    job_payload = {
-        "name": data["workflow_name"],
-        "tasks": [],
-        "max_concurrent_runs": 1
-    }
-    
-    task_key_map = {}
-    for task in data["tasks"]:
-        task_key = task["task_name"].replace(" ", "_").lower()
-        task_key_map[task["task_id"]] = task_key
-
-        job_task = {
-            "task_key": task_key,
-            "notebook_task": {
-                "notebook_path": f"{databricks_folder}/{task_key}.py",
-                "base_parameters": {}
-            },
-            "existing_cluster_id": CLUSTER_ID
-        }
-        
-        if task["dependencies"]:
-            job_task["depends_on"] = [{"task_key": task_key_map.get(dep_task_id)} for dep_task_id in task["dependencies"]]
-        
-        job_payload["tasks"].append(job_task)
-    
-    response = requests.post(create_job_url, headers=headers, json=job_payload)
-    if response.status_code == 200:
-        job_id = response.json().get('job_id')
-        print(f"Job '{data['workflow_name']}' created successfully. Job ID: {job_id}")
-    else:
-        raise Exception(f"Error creating job: {response.text}")
-
+@app.route('/trigger-job', methods=['POST'])
+def trigger_job():
     run_job_url = f"{DATABRICKS_HOST}/api/2.1/jobs/run-now"
-    run_payload = {"job_id": job_id}
-    run_response = requests.post(run_job_url, headers=headers, json=run_payload)
+    run_payload = {
+        "job_id": JOB_ID,
+        # Optional parameters (if required by the job)
+        # "notebook_params": {"param1": "value1"},
+        # "jar_params": ["param1", "param2"]
+    }
     
-    if run_response.status_code == 200:
-        run_id = run_response.json().get('run_id')
-        print(f"Job {job_id} started successfully. Run ID: {run_id}")
+    response = requests.post(run_job_url, headers=headers, json=run_payload)
+    
+    if response.status_code == 200:
+        return response.json(), 200
     else:
-        raise Exception(f"Error running job: {run_response.text}")
-    
-    check_status_url = f"{DATABRICKS_HOST}/api/2.1/jobs/runs/get"
-    task_statuses = {}
-    
-    while True:
-        status_response = requests.get(check_status_url, headers=headers, params={"run_id": run_id})
-        
-        if status_response.status_code == 200:
-            response_data = status_response.json()
-            run_status = response_data.get('state').get('life_cycle_state')
-            print(f"Run {run_id} status: {run_status}")
-            
-            tasks = response_data.get('tasks', [])
-            for task in tasks:
-                task_key = task.get('task_key')
-                task_state = task['state']['life_cycle_state']
-                
-                if task_key not in task_statuses or task_statuses[task_key] != task_state:
-                    print(f"Task '{task_key}' status: {task_state}")
-                    task_statuses[task_key] = task_state
-            
-            if run_status in ['TERMINATED', 'SKIPPED', 'INTERNAL_ERROR']:
-                print(f"Job {job_id} completed with status: {run_status}")
-                break
-        else:
-            raise Exception(f"Error fetching job status: {status_response.text}")
-        
-        time.sleep(1)
+        raise Exception(f"Failed to trigger job: {response.status_code}, {response.text}")
 
-@app.route('/create-job', methods=['POST'])
-def create_job():
-    if request.method == 'GET':
-        return jsonify({"message": "Send a POST request to create the job."}), 200
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        logging.error("No file part in the request")
+        return jsonify({"error": "No file part in the request"}), 400
+
+    file = request.files['file']
+    data_type = request.form.get('data-type')
+
+    if file.filename == '':
+        logging.error("No file selected")
+        return jsonify({"error": "No file selected"}), 400
+
+    if not is_valid_file(file, data_type):
+        allowed_extensions = ', '.join(STRUCTURED_EXTENSIONS) if data_type == 'structured' else ', '.join(UNSTRUCTURED_EXTENSIONS)
+        error_message = f"Invalid file type for {data_type} data. Allowed types are: {allowed_extensions}"
+        logging.error(error_message)
+        return jsonify({"error": error_message}), 400
+
     try:
-        create_and_run_databricks_job()
-        return jsonify({"message": "Job created and run successfully!"}), 200
+        upload_response = upload_file_to_dbfs(file, data_type)
+        job_response = trigger_job()
+        logging.info(f"File uploaded successfully to {STRUCTURED_PATH if data_type == 'structured' else UNSTRUCTURED_PATH}/{file.filename}")
+        return jsonify({
+            "message": f"File uploaded successfully to {STRUCTURED_PATH if data_type == 'structured' else UNSTRUCTURED_PATH}/{file.filename}",
+            "upload_response": upload_response,
+            "job_response": job_response  # Directly include the job response
+        }), 200
     except Exception as e:
+        logging.error(f"Exception occurred: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-if _name_ == '_main_':
-    app.run(debug=True)
+@app.route('/list-files/structured', methods=['GET'])
+def list_files_Structured():
+    path = request.args.get('path', STRUCTURED_PATH)  # Default path for listing files
+    
+    # List files in DBFS
+    dbfs_list_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/list"
+    params = {
+        "path": path
+    }
+    response = requests.get(dbfs_list_url, headers=headers, params=params)
+    
+    print(f"Response status code: {response.status_code}")  # Debugging line
+    print(f"Response text: {response.text}")  # Debugging line
+
+    if response.status_code == 200:
+        return jsonify(response.json()), 200
+    else:
+        return jsonify({"error": f"Failed to list files: {response.status_code}, {response.text}"}), 500
+
+@app.route('/list-files/unstructured', methods=['GET'])
+def list_files_Unstructured():
+    path = request.args.get('path', UNSTRUCTURED_PATH)  # Default path for listing files
+    
+    # List files in DBFS
+    dbfs_list_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/list"
+    params = {
+        "path": path
+    }
+    response = requests.get(dbfs_list_url, headers=headers, params=params)
+    
+    print(f"Response status code: {response.status_code}")  # Debugging line
+    print(f"Response text: {response.text}")  # Debugging line
+
+    if response.status_code == 200:
+        return jsonify(response.json()), 200
+    else:
+        return jsonify({"error": f"Failed to list files: {response.status_code}, {response.text}"}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
