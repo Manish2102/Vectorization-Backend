@@ -16,7 +16,7 @@ STRUCTURED_PATH = "/FileStore/Group-6_Data/Structured-data"  # Path for structur
 UNSTRUCTURED_PATH = "/FileStore/Group-6_Data/Unstructured-data"  # Path for unstructured data
 
 # Allowed file extensions
-STRUCTURED_EXTENSIONS = ['csv', 'xls', 'xlsx']
+STRUCTURED_EXTENSIONS = ['csv', 'xls', 'xlsx', 'png']
 UNSTRUCTURED_EXTENSIONS = ['pdf', 'doc', 'docx', 'json']
 
 # HTML form for file upload
@@ -33,7 +33,7 @@ UPLOAD_FORM_HTML = '''
             const dataType = document.querySelector('input[name="data-type"]:checked').value;
 
             if (dataType === 'structured') {
-                fileInput.accept = '.csv, .xls, .xlsx';
+                fileInput.accept = '.csv, .xls, .xlsx, png,';
             } else {
                 fileInput.accept = '.pdf, .doc, .docx, .json';
             }
@@ -121,8 +121,8 @@ def upload_file():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/list-files', methods=['GET'])
-def list_files():
+@app.route('/list-files/structured', methods=['GET'])
+def list_files_Structured():
     path = request.args.get('path', STRUCTURED_PATH)  # Default path for listing files
     
     # List files in DBFS
@@ -140,5 +140,24 @@ def list_files():
     else:
         return jsonify({"error": f"Failed to list files: {response.status_code}, {response.text}"}), 500
 
+@app.route('/list-files/unstructured', methods=['GET'])
+def list_files_Unstructured():
+    path = request.args.get('path', UNSTRUCTURED_PATH)  # Default path for listing files
+    
+    # List files in DBFS
+    dbfs_list_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/list"
+    params = {
+        "path": path
+    }
+    response = requests.get(dbfs_list_url, headers=headers, params=params)
+    
+    print(f"Response status code: {response.status_code}")  # Debugging line
+    print(f"Response text: {response.text}")  # Debugging line
+
+    if response.status_code == 200:
+        return jsonify(response.json()), 200
+    else:
+        return jsonify({"error": f"Failed to list files: {response.status_code}, {response.text}"}), 500
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
