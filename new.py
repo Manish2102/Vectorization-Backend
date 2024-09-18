@@ -6,6 +6,7 @@ import logging
 from flask_cors import CORS  # Import Flask-CORS
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
 # Enable CORS for all routes
 CORS(app)
@@ -67,7 +68,7 @@ UPLOAD_FORM_HTML = '''
 </html>
 '''
 
-@app.post('/')
+@app.route('/')
 def index():
     return render_template_string(UPLOAD_FORM_HTML)
 
