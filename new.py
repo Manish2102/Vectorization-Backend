@@ -3,8 +3,12 @@ import requests
 import base64
 from flask import Flask, request, jsonify, render_template_string
 import logging
+from flask_cors import CORS  # Import Flask-CORS
 
 app = Flask(__name__)
+
+# Enable CORS for all routes
+CORS(app)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -103,9 +107,6 @@ def trigger_job():
     run_job_url = f"{DATABRICKS_HOST}/api/2.1/jobs/run-now"
     run_payload = {
         "job_id": JOB_ID,
-        # Optional parameters (if required by the job)
-        # "notebook_params": {"param1": "value1"},
-        # "jar_params": ["param1", "param2"]
     }
     
     response = requests.post(run_job_url, headers=headers, json=run_payload)
@@ -151,15 +152,11 @@ def upload_file():
 def list_files_Structured():
     path = request.args.get('path', STRUCTURED_PATH)  # Default path for listing files
     
-    # List files in DBFS
     dbfs_list_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/list"
     params = {
         "path": path
     }
     response = requests.get(dbfs_list_url, headers=headers, params=params)
-    
-    print(f"Response status code: {response.status_code}")  # Debugging line
-    print(f"Response text: {response.text}")  # Debugging line
 
     if response.status_code == 200:
         return jsonify(response.json()), 200
@@ -170,15 +167,11 @@ def list_files_Structured():
 def list_files_Unstructured():
     path = request.args.get('path', UNSTRUCTURED_PATH)  # Default path for listing files
     
-    # List files in DBFS
     dbfs_list_url = f"{DATABRICKS_HOST}/api/2.0/dbfs/list"
     params = {
         "path": path
     }
     response = requests.get(dbfs_list_url, headers=headers, params=params)
-    
-    print(f"Response status code: {response.status_code}")  # Debugging line
-    print(f"Response text: {response.text}")  # Debugging line
 
     if response.status_code == 200:
         return jsonify(response.json()), 200
