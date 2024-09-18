@@ -67,7 +67,7 @@ UPLOAD_FORM_HTML = '''
 </html>
 '''
 
-@app.route('/')
+@app.post('/')
 def index():
     return render_template_string(UPLOAD_FORM_HTML)
 
@@ -101,6 +101,7 @@ def upload_file_to_dbfs(file, data_type):
         return response.json()
     else:
         raise Exception(f"Failed to upload file to DBFS: {response.status_code}, {response.text}")
+
 
 @app.route('/trigger-job', methods=['POST'])
 def trigger_job():
