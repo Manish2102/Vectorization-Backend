@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 # Load sensitive credentials from environment variables
 DATABRICKS_HOST = os.getenv('DATABRICKS_HOST', 'https://adb-1620865038680305.5.azuredatabricks.net')
 DATABRICKS_TOKEN = os.getenv('DATABRICKS_TOKEN', 'dapibbaaa71fcd3f5fd3612a6a37120509d2-3')
-JOB_ID = os.getenv('JOB_ID', '595512840231112')  # Your existing Databricks Job ID
+JOB_ID = os.getenv('JOB_ID', '91891257328309')  # Your existing Databricks Job ID
 
 headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}", "Content-Type": "application/json"}
 
