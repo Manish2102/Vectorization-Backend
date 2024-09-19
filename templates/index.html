@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive File Upload with Prompt</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        form {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 50%;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        label {
+            font-weight: bold;
+        }
+        input[type="text"], input[type="file"], button {
+            display: block;
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e7f3fe;
+            border-left: 4px solid #2196F3;
+            display: none;
+        }
+        .error {
+            background-color: #fdecea;
+            border-left: 4px solid #f44336;
+        }
+    </style>
+    <script>
+        function updateFileTypes() {
+            const fileInput = document.getElementById('file');
+            const dataType = document.querySelector('input[name="data-type"]:checked').value;
+
+            fileInput.accept = dataType === 'structured' ? '.csv, .xls, .xlsx, .png' : '.pdf, .doc, .docx, .json';
+        }
+
+        function uploadFile(event) {
+            event.preventDefault();  // Prevent form from submitting the traditional way
+
+            const formData = new FormData(document.getElementById('upload-form'));
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                const statusElement = document.getElementById('upload-status');
+                if (data.error) {
+                    statusElement.textContent = 'Error: ' + data.error;
+                    statusElement.classList.add('error');
+                } else {
+                    statusElement.textContent = 'File uploaded successfully: ' + data.message;
+                    statusElement.classList.remove('error');
+                    statusElement.classList.add('status');
+                    triggerJob(data.job_id, data.data_type);
+                }
+                statusElement.style.display = 'block';
+            })
+            .catch(error => {
+                document.getElementById('upload-status').textContent = 'Upload failed: ' + error;
+                document.getElementById('upload-status').classList.add('error');
+                document.getElementById('upload-status').style.display = 'block';
+            });
+        }
+
+        function triggerJob(jobId, dataType) {
+            const userQuery = document.getElementById('user-query').value;  // Get the user's query
+
+            fetch('/trigger-job', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ "job_id": jobId, "query": userQuery, "data_type": dataType })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const statusElement = document.getElementById('job-status');
+                if (data.error) {
+                    statusElement.textContent = 'Error: ' + data.error;
+                    statusElement.classList.add('error');
+                } else {
+                    statusElement.textContent = 'Job triggered successfully. Run ID: ' + data.run_id;
+                    statusElement.classList.remove('error');
+                    statusElement.classList.add('status');
+                    checkRunStatus(data.run_id);
+                }
+                statusElement.style.display = 'block';
+            })
+            .catch(error => {
+                document.getElementById('job-status').textContent = 'Job trigger failed: ' + error;
+                document.getElementById('job-status').classList.add('error');
+                document.getElementById('job-status').style.display = 'block';
+            });
+        }
+
+        function checkRunStatus(runId) {
+            fetch('/check-status?run_id=' + runId)
+            .then(response => response.json())
+            .then(data => {
+                const statusElement = document.getElementById('run-status');
+                if (data.run_status === 'SUCCESS') {
+                    statusElement.textContent = 'Run Status: Success. Data updated successfully.';
+                } else {
+                    statusElement.textContent = 'Run Status: Failed. Data not updated.';
+                }
+                statusElement.classList.add('status');
+                statusElement.style.display = 'block';
+            })
+            .catch(error => {
+                document.getElementById('run-status').textContent = 'Failed to get run status: ' + error;
+                document.getElementById('run-status').classList.add('error');
+                document.getElementById('run-status').style.display = 'block';
+            });
+        }
+    </script>
+</head>
+<body>
+    <h1>Upload File to DBFS</h1>
+    <form id="upload-form" onsubmit="uploadFile(event)" enctype="multipart/form-data">
+        <label for="structured">
+            <input type="radio" id="structured" name="data-type" value="structured" checked onclick="updateFileTypes()"> Structured Data
+        </label>
+        <label for="unstructured">
+            <input type="radio" id="unstructured" name="data-type" value="unstructured" onclick="updateFileTypes()"> Unstructured Data
+        </label>
+        <br><br>
+        <label for="file">Choose file:</label>
+        <input type="file" id="file" name="file" required>
+        <br><br>
+        <button type="submit">Upload</button>
+    </form>
+    <p id="upload-status"></p>
+
+    <br><br>
+
+    <label for="user-query">Enter your query:</label>
+    <input type="text" id="user-query" name="user-query" required>
+    <br><br>
+
+    <p id="job-status"></p>
+    <p id="run-status"></p>
+</body>
+</html>
